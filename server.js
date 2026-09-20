@@ -111,22 +111,101 @@ function bumpGuest(ip, mode) {
   });
 }
 
-// ---- 访客访问日志（输出到 stdout，Render 日志面板可查看） ----
-function logAccess(info) {
-  console.log("[ACCESS]", JSON.stringify(Object.assign({ time: new Date().toISOString() }, info)));
+// ---- 访客访问日志（全中文输出到 stdout，Render 日志面板可查看） ----
+function friendlyUA(ua) {
+  if (!ua) return "未知设备";
+  let s = "";
+  if (/MicroMessenger/i.test(ua)) s += "微信浏览器 ";
+  else if (/WeChat/i.test(ua)) s += "微信 ";
+  if (/iPhone/i.test(ua)) s += "iPhone ";
+  else if (/Android/i.test(ua)) s += "安卓手机 ";
+  else if (/iPad/i.test(ua)) s += "iPad ";
+  else if (/Macintosh/i.test(ua)) s += "Mac电脑 ";
+  else if (/Windows/i.test(ua)) s += "Windows电脑 ";
+  const net = ua.match(/NetType\/(\w+)/i);
+  if (net) { const nt = net[1].toUpperCase() === "WIFI" ? "无线" : net[1]; s += "(" + nt + "网) "; }
+  return s.trim() || ua; // 没匹配到就原样返回
 }
-// 简易 GeoIP（ip-api.com 免费、无需 key；仅做尽力查询，失败不影响主流程）
+const EV_MAP = { pageview: "打开页面", judge: "Jev审判" };
+const MODE_MAP = { detect: "火眼金睛", fool: "巧舌如簧", verdict: "断案如神", unknown: "未知" };
+const KEY_MAP = { guest: "访客体验(演示Key)", "own-key": "自己的Key(无限)", dev: "开发模式(无限)" };
+function beijingTime(iso) {
+  const d = iso ? new Date(iso) : new Date();
+  const bj = new Date(d.getTime() + 8 * 3600 * 1000); // 统一转北京时区(GMT+8)
+  const p = (n) => String(n).padStart(2, "0");
+  return `${bj.getUTCFullYear()}-${p(bj.getUTCMonth() + 1)}-${p(bj.getUTCDate())} ${p(bj.getUTCHours())}:${p(bj.getUTCMinutes())}:${p(bj.getUTCSeconds())} (北京)`;
+}
+function logAccess(info) {
+  const t = beijingTime(info.time);
+  const ev = EV_MAP[info.event] || info.event || "访问";
+  let line = `【访问·${ev}】时间=${t} | IP=${info.ip || "?"}`;
+  if (info.mode) line += ` | 模式=${MODE_MAP[info.mode] || info.mode}`;
+  if (info.keyType) line += ` | 身份=${KEY_MAP[info.keyType] || info.keyType}`;
+  if (info.ua) line += ` | 设备=${friendlyUA(info.ua)}`;
+  if (info.referer) line += ` | 来源页=${info.referer}`;
+  console.log(line);
+}
+// ---- 以下把 ip-api 返回的英文标识翻译成中文（数据源本身是英文，做常见映射） ----
+function cnOrg(s) {
+  if (!s) return "未知";
+  const map = [
+    [/Tencent/i, "腾讯"], [/Alibaba|Aliyun/i, "阿里云"], [/Baidu/i, "百度"],
+    [/Huawei/i, "华为云"], [/China Telecom|Chinanet/i, "中国电信"], [/China Mobile/i, "中国移动"],
+    [/China Unicom/i, "中国联通"], [/China Netcom/i, "中国网通"], [/CERNET/i, "教育网"],
+    [/Microsoft|Azure/i, "微软Azure"], [/Amazon|AWS/i, "亚马逊AWS"], [/Google/i, "谷歌"],
+    [/Cloudflare/i, "Cloudflare"], [/G-Core|Gcore/i, "G-Core Labs(CDN)"], [/DigitalOcean/i, "DigitalOcean"],
+    [/Oracle/i, "甲骨文云"], [/OVH/i, "OVH"], [/Hetzner/i, "Hetzner"], [/Linode/i, "Linode"],
+    [/Vultr/i, "Vultr"], [/Comcast/i, "康卡斯特"], [/Verizon/i, "威瑞森"], [/AT&T/i, "美国电话电报"],
+    [/Deutsche Telekom/i, "德国电信"], [/SoftBank/i, "软银"], [/KDDI/i, "KDDI"],
+  ];
+  for (const [re, zh] of map) if (re.test(s)) return zh;
+  return s; // 没匹配到则保留原英文
+}
+function cnAs(s) {
+  if (!s) return "未知";
+  const m = s.match(/^(AS\d+)\s+(.*)$/); // 保留 AS 编号，公司名翻中文
+  return m ? m[1] + " " + cnOrg(m[2]) : cnOrg(s);
+}
+function cnTz(s) {
+  if (!s) return "未知";
+  if (/Shanghai|Chongqing|Hong_Kong|Urumqi|Taipei/i.test(s)) return "中国时区(UTC+8)";
+  if (/Tokyo/i.test(s)) return "日本时区(UTC+9)";
+  if (/Singapore/i.test(s)) return "新加坡时区(UTC+8)";
+  if (/Seoul/i.test(s)) return "韩国时区(UTC+9)";
+  if (/Bangkok/i.test(s)) return "泰国时区(UTC+7)";
+  if (/Los_Angeles/i.test(s)) return "美西时区(UTC-8/-7)";
+  if (/New_York|Eastern/i.test(s)) return "美东时区(UTC-5/-4)";
+  if (/Chicago/i.test(s)) return "美中时区(UTC-6/-5)";
+  if (/London|Dublin/i.test(s)) return "伦敦时区(UTC+0/+1)";
+  if (/Paris|Berlin|Madrid|Rome|Amsterdam/i.test(s)) return "欧洲中部时区(UTC+1/+2)";
+  if (/Moscow/i.test(s)) return "莫斯科时区(UTC+3)";
+  if (/Sydney/i.test(s)) return "悉尼时区(UTC+10/+11)";
+  return s;
+}
+function cnMsg(s) {
+  const map = {
+    "private range": "私有IP段(内网)", "reserved range": "保留IP段",
+    "invalid query": "无效IP", "quota exceeded": "查询次数超限",
+    "over quota": "查询次数超限", "no results": "无结果",
+  };
+  return map[s] || s;
+}
+
+// 简易 GeoIP（ip-api.com 免费、无需 key；lang=zh-CN 直接返回中文地名；失败不影响主流程）
+// 说明：纯 IP 定位精度极限为「区县」，乡镇/街道级需浏览器 GPS 授权，本服务不采集。
 function geoLookup(ip) {
   if (!ip || ip === "unknown") return;
   if (/^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|127\.|::1)/.test(ip)) return; // 跳过内网/本机
-  const r = http.get("http://ip-api.com/json/" + encodeURIComponent(ip), (res) => {
+  const r = http.get("http://ip-api.com/json/" + encodeURIComponent(ip) + "?lang=zh-CN&fields=status,message,country,regionName,city,district,zip,timezone,isp,org,as,mobile,proxy,query,lat,lon", (res) => {
     let d = "";
     res.on("data", (c) => (d += c));
     res.on("end", () => {
       try {
         const g = JSON.parse(d);
         if (g && g.status === "success") {
-          console.log("[GEO]", JSON.stringify({ ip, country: g.country, region: g.regionName, city: g.city, lat: g.lat, lon: g.lon, org: g.org, isp: g.isp }));
+          console.log(`【位置】IP=${ip} | 国家=${g.country || "未知"} | 省份=${g.regionName || "未知"} | 城市=${g.city || "未知"} | 区县=${g.district || "未知"} | 邮编=${g.zip || "未知"} | 时区=${cnTz(g.timezone)} | 运营商=${cnOrg(g.org || g.isp)} | 网络=${cnAs(g.as)} | 移动网=${g.mobile ? "是" : "否"} | 代理/VPN=${g.proxy ? "是⚠️" : "否"} | 经纬度=${g.lat ?? "?"},${g.lon ?? "?"}`);
+        } else if (g && g.message) {
+          console.log(`【位置·查询失败】IP=${ip} | 原因=${cnMsg(g.message)}`);
         }
       } catch (e) {}
     });
