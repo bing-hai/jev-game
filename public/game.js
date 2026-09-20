@@ -492,7 +492,17 @@
   }
   function saveKey() {
     const v = $("#keyInput").value.trim();
-    if (!v) return;
+    if (!v) {
+      $("#keyInput").focus();
+      const hint = document.querySelector(".key-hint");
+      if (hint) {
+        const old = hint.textContent;
+        hint.textContent = "⚠️ 先粘贴你的 Key 再点解锁";
+        hint.style.color = "var(--red)";
+        setTimeout(() => { hint.textContent = old; hint.style.color = ""; }, 2000);
+      }
+      return;
+    }
     state.userKey = v;
     localStorage.setItem("jev_userkey", v);
     $("#keyInput").value = "";
