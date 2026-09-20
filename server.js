@@ -11,6 +11,11 @@
  *
  * 安全：Key 仅服务端持有；访客自填的 key 只用于本次请求的 Authorization，不落盘。
  * 纯 Node 内置模块，无需 npm install。
+ *
+ * 访客计数说明（v2 修复跨实例/冷启动计数跳变）：
+ *   - 每次请求实时从 data/guest_counts.json 读取当前计数（不再依赖启动时的内存快照）；
+ *   - 计数写入通过串行锁（writeLock）排队，避免并发/重试导致的重复自增；
+ *   - 取客户端真实 IP 用 X-Forwarded-For 的【首段】（原始客户端），比末段更稳定，避免代理 IP 抖动导致同一访客落到不同桶。
  */
 
 const http = require("http");
@@ -55,29 +60,55 @@ function loadKey() {
 const API_KEY = loadKey(); // 自托管 / 开发模式用
 const DEMO_KEY = (process.env.TYPESAFE_DEMO_KEY || "").trim() || null; // 访客演示用
 
-// ---- 访客计数（按 IP+模式），持久化到文件防止重启绕过 ----
-let guestCounts = {};
-try {
-  guestCounts = JSON.parse(fs.readFileSync(COUNTS_FILE, "utf8"));
-} catch (e) {
-  guestCounts = {};
-}
-function saveCounts() {
+// ---- 访客计数（按 IP+模式），持久化到文件防止重启/跨实例绕过 ----
+function readCounts() {
   try {
-    fs.mkdirSync(path.dirname(COUNTS_FILE), { recursive: true });
-    fs.writeFileSync(COUNTS_FILE, JSON.stringify(guestCounts));
+    return JSON.parse(fs.readFileSync(COUNTS_FILE, "utf8")) || {};
   } catch (e) {
-    /* 不可写则仅内存计数 */
+    return {};
   }
 }
+function writeCounts(obj) {
+  try {
+    fs.mkdirSync(path.dirname(COUNTS_FILE), { recursive: true });
+    fs.writeFileSync(COUNTS_FILE, JSON.stringify(obj));
+  } catch (e) {
+    /* 不可写则本次计数不落盘（内存中仍正确） */
+  }
+}
+// 串行锁：保证读-改-写不会并发交错，杜绝重复自增
+let writeLock = Promise.resolve();
+function withLock(fn) {
+  const next = writeLock.then(fn, fn);
+  // 防止某个 fn 抛错导致锁链断裂
+  writeLock = next.catch(() => {});
+  return next;
+}
+
 function getIp(req) {
   const xff = req.headers["x-forwarded-for"];
   if (xff) {
-    // 取最靠近服务端的那一段（由可信反向代理追加），避免客户端伪造 XFF 绕过限制
-    const parts = xff.split(",").map((s) => s.trim()).filter(Boolean);
-    if (parts.length) return parts[parts.length - 1];
+    // 取 X-Forwarded-For 的首段 = 原始客户端 IP（最稳定，不受代理追加影响）
+    const first = xff.split(",")[0].trim();
+    if (first) return first;
   }
   return req.socket.remoteAddress || "unknown";
+}
+
+// 查询某 IP+模式已用次数
+function checkGuest(ip, mode) {
+  const counts = readCounts();
+  return counts[ip + ":" + mode] || 0;
+}
+// 成功一次后 +1 并落盘（串行化）
+function bumpGuest(ip, mode) {
+  return withLock(() => {
+    const counts = readCounts();
+    const ck = ip + ":" + mode;
+    counts[ck] = (counts[ck] || 0) + 1;
+    writeCounts(counts);
+    return counts[ck];
+  });
 }
 
 // 防止意外异常把整个服务带崩
@@ -203,7 +234,7 @@ const server = http.createServer((req, res) => {
           : null;
 
       // ---- 决定使用哪个 Key 与是否受限 ----
-      let key, isGuest = false;
+      let key, isGuest = false, guestUsed = 0;
       if (userKey) {
         // 访客自填 Key：本人配额，无限；做基本格式校验
         if (!/^[\w\-]{10,}$/.test(userKey)) {
@@ -213,10 +244,9 @@ const server = http.createServer((req, res) => {
         }
         key = userKey;
       } else if (DEMO_KEY) {
-        // 访客演示模式：按 IP+模式 计数限制
+        // 访客演示模式：按 IP+模式 计数限制（实时读文件，避免内存快照漂移）
         const ip = getIp(req);
-        const ck = ip + ":" + mode;
-        const used = guestCounts[ck] || 0;
+        const used = checkGuest(ip, mode);
         if (used >= GUEST_LIMIT_PER_MODE) {
           res.writeHead(403, { "Content-Type": "application/json" });
           res.end(
@@ -248,14 +278,9 @@ const server = http.createServer((req, res) => {
         const out = await callJev(clean, key);
         out.timing = { jev_ms: Date.now() - t0 };
         if (isGuest) {
-          const ck = getIp(req) + ":" + mode;
-          guestCounts[ck] = (guestCounts[ck] || 0) + 1;
-          saveCounts();
-          out.guest = {
-            mode,
-            used: guestCounts[ck],
-            limit: GUEST_LIMIT_PER_MODE,
-          };
+          // 仅在调用成功后计数一次（只算成功体验，不浪费失败额度）
+          guestUsed = await bumpGuest(getIp(req), mode);
+          out.guest = { mode, used: guestUsed, limit: GUEST_LIMIT_PER_MODE };
         }
         res.writeHead(200, { "Content-Type": "application/json" });
         res.end(JSON.stringify(out));
