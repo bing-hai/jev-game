@@ -111,6 +111,30 @@ function bumpGuest(ip, mode) {
   });
 }
 
+// ---- 访客访问日志（输出到 stdout，Render 日志面板可查看） ----
+function logAccess(info) {
+  console.log("[ACCESS]", JSON.stringify(Object.assign({ time: new Date().toISOString() }, info)));
+}
+// 简易 GeoIP（ip-api.com 免费、无需 key；仅做尽力查询，失败不影响主流程）
+function geoLookup(ip) {
+  if (!ip || ip === "unknown") return;
+  if (/^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|127\.|::1)/.test(ip)) return; // 跳过内网/本机
+  const r = http.get("http://ip-api.com/json/" + encodeURIComponent(ip), (res) => {
+    let d = "";
+    res.on("data", (c) => (d += c));
+    res.on("end", () => {
+      try {
+        const g = JSON.parse(d);
+        if (g && g.status === "success") {
+          console.log("[GEO]", JSON.stringify({ ip, country: g.country, region: g.regionName, city: g.city, lat: g.lat, lon: g.lon, org: g.org, isp: g.isp }));
+        }
+      } catch (e) {}
+    });
+  });
+  r.on("error", () => {});
+  r.setTimeout(3000, () => r.destroy());
+}
+
 // 防止意外异常把整个服务带崩
 process.on("uncaughtException", (e) => console.error("uncaughtException:", e));
 process.on("unhandledRejection", (e) => console.error("unhandledRejection:", e));
@@ -277,6 +301,8 @@ const server = http.createServer((req, res) => {
         const t0 = Date.now();
         const out = await callJev(clean, key);
         out.timing = { jev_ms: Date.now() - t0 };
+        const rip = getIp(req);
+        logAccess({ event: "judge", ip: rip, mode, keyType: userKey ? "own-key" : (DEMO_KEY ? "guest" : "dev"), ua: req.headers["user-agent"] || "" });
         if (isGuest) {
           // 仅在调用成功后计数一次（只算成功体验，不浪费失败额度）
           guestUsed = await bumpGuest(getIp(req), mode);
@@ -295,6 +321,11 @@ const server = http.createServer((req, res) => {
   // 静态文件
   let urlPath = decodeURIComponent(req.url.split("?")[0]);
   if (urlPath === "/") urlPath = "/index.html";
+  if (urlPath === "/index.html") {
+    const vip = getIp(req);
+    logAccess({ event: "pageview", ip: vip, ua: req.headers["user-agent"] || "", referer: req.headers["referer"] || "" });
+    geoLookup(vip); // 仅页面打开时查一次地理，省额度
+  }
   const filePath = path.join(PUBLIC_DIR, path.normalize(urlPath));
   if (!filePath.startsWith(PUBLIC_DIR)) {
     res.writeHead(403);
