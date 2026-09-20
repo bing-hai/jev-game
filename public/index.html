@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>JEV 审判庭 · 与常识 AI 的三场对决</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="bg-grid"></div>
+
+  <header class="topbar">
+    <div class="brand">
+      <div class="logo">JEV</div>
+      <div class="brand-text">
+        <h1>JEV 审判庭</h1>
+        <p>与常识 AI 的三场对决 · 由 TypeSafe System One 驱动</p>
+      </div>
+    </div>
+    <div class="scoreboard" id="scoreboard">
+      <div class="sb-cell">
+        <span class="sb-label">你</span>
+        <span class="sb-val" id="youScore">0</span>
+        <span class="sb-sub" id="youRate">命中 0%</span>
+      </div>
+      <div class="sb-vs">VS</div>
+      <div class="sb-cell jev">
+        <span class="sb-label">JEV</span>
+        <span class="sb-val" id="jevScore">0</span>
+        <span class="sb-sub" id="jevRate">命中 0%</span>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <!-- 解锁横幅：访客体验 / 填入自己的 Key 解锁无限 -->
+    <div class="keybar" id="keybar">
+      <div class="key-status local" id="keyStatus">🖥️ 本地模式 · 无限畅玩</div>
+      <div class="key-input-wrap">
+        <input id="keyInput" type="password" placeholder="粘贴你的 TypeSafe API Key 解锁无限" autocomplete="off" />
+        <button class="btn small" id="keySave">解锁</button>
+        <button class="btn small ghost" id="keyClear" hidden>清除</button>
+      </div>
+    </div>
+
+    <!-- 实时仪表盘 -->
+    <section class="dashboard">
+      <div class="dash-head">
+        <span class="pulse"></span>
+        <h2>JEV 实时判断</h2>
+        <span class="timing-badge" id="timingBadge">⚡ -- ms</span>
+        <span class="model-tag" id="modelTag">jev-latest</span>
+      </div>
+      <div class="dash-body" id="dashBody">
+        <p class="dash-hint">在下方任意一个关卡发起判断，Jev 的概率分布会实时显示在这里。</p>
+      </div>
+    </section>
+
+    <!-- 关卡切换 -->
+    <nav class="tabs" id="tabs">
+      <button class="tab active" data-tab="detect">
+        <span class="tnum">①</span> 火眼金睛 <small>Noul · 真/假</small>
+      </button>
+      <button class="tab" data-tab="fool">
+        <span class="tnum">②</span> 巧舌如簧 <small>Noul+Score · 骗术</small>
+      </button>
+      <button class="tab" data-tab="verdict">
+        <span class="tnum">③</span> 断案如神 <small>Choice · 选因</small>
+      </button>
+    </nav>
+
+    <!-- 关卡① 火眼金睛 -->
+    <section class="panel active" id="panel-detect">
+      <h3>关卡 ① · 火眼金睛</h3>
+      <p class="desc">Jev 用 <b>Noul</b>（是/否概率）判断一条陈述是否属实。你来猜真/假，再和 Jev 的判罚比一比。</p>
+      <div class="card" id="detectCard">
+        <div class="cat-tag" id="detectCat">自然</div>
+        <p class="fact-text" id="detectText">加载中…</p>
+        <div class="btn-row">
+          <button class="btn ghost" data-guess="true">我猜：真</button>
+          <button class="btn ghost" data-guess="false">我猜：假</button>
+        </div>
+      </div>
+      <div class="reveal" id="detectReveal" hidden></div>
+      <button class="btn next" id="detectNext" hidden>下一题 →</button>
+    </section>
+
+    <!-- 关卡② 巧舌如簧 -->
+    <section class="panel" id="panel-fool">
+      <h3>关卡 ② · 巧舌如簧</h3>
+      <p class="desc">轮到你出题：写一句<b>假的但听起来很可信</b>的话，看 Jev 会不会信。Jev 用 Noul 给出“相信度”，用 Score 给出“巧妙度”。骗术分 = 相信度。</p>
+      <div class="card">
+        <textarea id="foolInput" maxlength="120" placeholder="例如：章鱼会自己拧开罐头盖偷吃海鲜罐头……（请写一句你明知是假的）"></textarea>
+        <div class="btn-row">
+          <button class="btn primary" id="foolSubmit">交给 Jev 审判</button>
+        </div>
+      </div>
+      <div class="reveal" id="foolReveal" hidden></div>
+    </section>
+
+    <!-- 关卡③ 断案如神 -->
+    <section class="panel" id="panel-verdict">
+      <h3>关卡 ③ · 断案如神</h3>
+      <p class="desc">Jev 用 <b>Choice</b>（带概率分布的选择）从若干解释里挑出最可能的那个。你先选，再看 Jev 怎么选、把握多大。</p>
+      <div class="card" id="verdictCard">
+        <p class="fact-text" id="verdictScene">加载中…</p>
+        <div class="options" id="verdictOptions"></div>
+      </div>
+      <div class="reveal" id="verdictReveal" hidden></div>
+      <button class="btn next" id="verdictNext" hidden>下一案 →</button>
+    </section>
+  </main>
+
+  <footer>
+    <span>Jev 是 TypeSafe 的旗舰 System One 模型：返回结构化概率而非文字，可被代码直接组合。</span>
+  </footer>
+
+  <script src="content.js"></script>
+  <script src="game.js"></script>
+</body>
+</html>

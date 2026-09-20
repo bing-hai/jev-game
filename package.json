@@ -1,0 +1,13 @@
+{
+  "name": "jev-game",
+  "version": "1.0.0",
+  "description": "JEV 审判庭 — 体验 TypeSafe Jev 判断模型的小游戏",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "private": true
+}

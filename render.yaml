@@ -1,0 +1,14 @@
+# Render 一键部署配置（小白友好）
+# 用法：把本仓库连到 Render 后，它会自动按这个文件部署，无需敲命令。
+# 部署完成后，记得在 Render 后台 → Environment 里添加 TYPESAFE_DEMO_KEY（你的 Key）。
+services:
+  - type: web
+    name: jev-game
+    runtime: node
+    plan: free            # 免费档，够个人 Demo 用
+    branch: main          # 你的 GitHub 默认分支名（可能是 master）
+    buildCommand: "true"  # 纯 Node 内置模块，无需 npm install
+    startCommand: "node server.js"
+    healthCheckPath: "/api/status"
+    # PORT 由 Render 自动注入，无需手动设置
+    # TYPESAFE_DEMO_KEY 请在 Render 后台 Environment 手动添加（不要写进代码）
